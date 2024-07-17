@@ -16,7 +16,7 @@ namespace HealthCareManagement.Consumer
                 //Tüketici grubun kimliği belirtilir.
                 GroupId = "hastalar",
                 
-                //Tüketici grubunun kaydedilmiş bir offseti yoksa veya offset mevcut değilse tüketici en eski mesajdan başlar.
+                //Tüketici grubunun kaydedilmiş  bir offseti yoksa veya offset mevcut değilse tüketici en eski mesajdan başlar.
                 AutoOffsetReset = AutoOffsetReset.Earliest
             };
 
@@ -24,8 +24,11 @@ namespace HealthCareManagement.Consumer
             using (var consumer = new ConsumerBuilder<Ignore, string>(config).Build())
             {
                 
+                Console.Write("İlgili topic adını girin: ");
+                var topic = Console.ReadLine();
+                
                 //Tüketici, ilgili topic'e abone olur, bu sayede gelen mesajlar dinlenir.
-                consumer.Subscribe("healthcare-topic");
+                consumer.Subscribe(topic);
 
                 //Kafkadan sürekli olarak mesaj alınır.
                 while (true)
