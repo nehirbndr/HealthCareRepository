@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using Confluent.Kafka;
+using Confluent.Kafka.Admin;
 
 namespace HealthCareManagement.Consumer
 {
@@ -14,31 +16,113 @@ namespace HealthCareManagement.Consumer
                 BootstrapServers = "localhost:9092",
                 
                 //Tüketici grubun kimliği belirtilir.
-                GroupId = "hastalar",
+                GroupId = "consumerGroup",
                 
-                //Tüketici grubunun kaydedilmiş  bir offseti yoksa veya offset mevcut değilse tüketici en eski mesajdan başlar.
-                AutoOffsetReset = AutoOffsetReset.Earliest
+                //Tüketici yeni mesajlardan itibaren okumaya başlar.
+                AutoOffsetReset = AutoOffsetReset.Latest,
+                EnableAutoCommit = false 
             };
 
-            //Tüketici nesnesi oluşturulur ve yapılandırılır.
-            using (var consumer = new ConsumerBuilder<Ignore, string>(config).Build())
+            try
             {
-                
-                Console.Write("İlgili topic adını girin: ");
-                var topic = Console.ReadLine();
-                
-                //Tüketici, ilgili topic'e abone olur, bu sayede gelen mesajlar dinlenir.
-                consumer.Subscribe(topic);
-
-                //Kafkadan sürekli olarak mesaj alınır.
-                while (true)
+                using (var adminClient = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = "localhost:9092" }).Build())
+                using (var consumer = new ConsumerBuilder<Ignore, string>(config).Build())
                 {
-                    //Tüketici bir mesajı alır.
-                    var consumeResult = consumer.Consume();
+                    while (true)
+                    {
+                        try
+                        {
+                            List<string> topics = new List<string>();
+                            var metadata = adminClient.GetMetadata(TimeSpan.FromSeconds(10));
+                            
+                            // Mevcut topicler listelenir.
+                            foreach (var topic in metadata.Topics)
+                            {
+                                if (!topic.Error.IsError)
+                                {
+                                    topics.Add(topic.Topic);
+                                }
+                            }
 
-                    //Tüketilen mesaj değeri konsola yazdırılır.
-                    Console.WriteLine($"Alınan mesaj: {consumeResult.Message.Value}");
+                            Console.WriteLine("Topicler:");
+                            for (int i = 0; i < topics.Count; i++)
+                            {
+                                Console.WriteLine($"{i + 1}. {topics[i]}");
+                            }
+
+                            Console.Write("Dinlemek istediğiniz topici seçin: ");
+                            var input = Console.ReadLine();
+                            int topicIndex;
+                            if (int.TryParse(input, out topicIndex) && topicIndex > 0 && topicIndex <= topics.Count)
+                            {
+                                string topicName = topics[topicIndex - 1];
+                                consumer.Subscribe(topicName);
+
+                                Console.WriteLine($"'{topicName}' topic'inden mesajlar dinleniyor (Çıkmak için 'çıkış' yazın, yeni topic seçmek için 'yeni' yazın):");
+
+                                while (true)
+                                {
+                                    try
+                                    {
+                                        var consumeResult = consumer.Consume(TimeSpan.FromMilliseconds(100));
+                                        if (consumeResult != null)
+                                        {
+                                            Console.WriteLine($"Alınan mesaj: {consumeResult.Message.Value}");
+
+                                            // Mesajı işlendikten sonra commit edilir
+                                            consumer.Commit(consumeResult);
+                                        }
+
+                                        // Kullanıcıdan bir komut girmesi istenir
+                                        if (Console.KeyAvailable)
+                                        {
+                                            Console.Write("Komut girin (Çıkmak için 'çıkış', yeni topic için 'yeni'): ");
+                                            var command = Console.ReadLine();
+                                            
+                                            if (command.ToLower() == "çıkış")
+                                            {
+                                                return;
+                                            }
+                                            else if (command.ToLower() == "yeni")
+                                            {
+                                                consumer.Unsubscribe();
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    catch (ConsumeException ex)
+                                    {
+                                        Console.WriteLine($"Mesaj tüketim hatası: {ex.Error.Reason}");
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Console.WriteLine($"Bir hata oluştu: {ex.Message}");
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                Console.WriteLine("Geçersiz seçim, tekrar deneyin.");
+                            }
+                        }
+                        catch (KafkaException ex)
+                        {
+                            Console.WriteLine($"Kafka ile ilgili bir hata oluştu: {ex.Message}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Bir hata oluştu: {ex.Message}");
+                        }
+                    }
                 }
+            }
+            catch (KafkaException ex)
+            {
+                Console.WriteLine($"Kafka ile ilgili bir hata oluştu: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Bir hata oluştu: {ex.Message}");
             }
         }
     }
